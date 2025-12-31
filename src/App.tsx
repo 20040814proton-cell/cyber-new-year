@@ -15,10 +15,11 @@ import * as random from 'maath/random';
 import { GestureRecognizer, FilesetResolver } from "@mediapipe/tasks-vision";
 
 // --- 动态生成照片列表 (1.jpg 到 8.jpg + top.jpg) ---
+const baseUrl = import.meta.env.BASE_URL;
 const TOTAL_NUMBERED_PHOTOS = 8;
 const bodyPhotoPaths = [
-  ...Array.from({ length: TOTAL_NUMBERED_PHOTOS }, (_, i) => `/photos/${i + 1}.jpg`),
-  '/photos/top.jpg'
+  ...Array.from({ length: TOTAL_NUMBERED_PHOTOS }, (_, i) => `${baseUrl}photos/${i + 1}.jpg`),
+  `${baseUrl}photos/top.jpg`
 ];
 
 // --- Cyberpunk Config ---

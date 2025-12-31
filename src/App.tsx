@@ -350,12 +350,13 @@ const DataWall = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     });
   }, [textures]);
 
-  const [flicker, setFlicker] = useState(1);
   useFrame((stateObj, delta) => {
     if (!groupRef.current) return;
     const isFormed = state === 'FORMED';
     const time = stateObj.clock.elapsedTime;
-    setFlicker(0.8 + Math.random() * 0.4);
+
+    // Smooth breathing effect instead of random flickering for mobile stability
+    const breathing = 0.8 + Math.sin(time * 2) * 0.2;
 
     groupRef.current.children.forEach((child, i) => {
       const objData = data[i];
@@ -367,6 +368,12 @@ const DataWall = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
 
       if (isFormed) {
         child.rotation.set(Math.sin(time + i) * 0.05, Math.cos(time * 0.8 + i) * 0.05, 0);
+
+        // Directly update material to avoid extra state re-renders
+        const photoMesh = (child as THREE.Group).children[0] as THREE.Mesh;
+        if (photoMesh && photoMesh.material) {
+          (photoMesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 0.3 * breathing;
+        }
       } else {
         child.rotation.x += delta * objData.rotationSpeed.x;
         child.rotation.y += delta * objData.rotationSpeed.y;
@@ -385,7 +392,7 @@ const DataWall = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
               transparent
               opacity={0.85}
               emissive={CONFIG.colors.neonCyan}
-              emissiveIntensity={state === 'FORMED' ? 0.3 * flicker : 0}
+              emissiveIntensity={0}
               side={THREE.DoubleSide}
             />
           </mesh>
@@ -680,7 +687,7 @@ export default function CyberDataTreeApp() {
       <GlitchTitle state={sceneState} />
 
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
-        <Canvas dpr={[1, 2]} gl={{ toneMapping: THREE.ReinhardToneMapping }} shadows>
+        <Canvas dpr={[1, 1.5]} gl={{ toneMapping: THREE.ReinhardToneMapping }} shadows>
           <Experience sceneState={sceneState} rotationSpeed={rotationSpeed} />
         </Canvas>
       </div>

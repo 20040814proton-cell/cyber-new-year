@@ -331,6 +331,82 @@ const DigitalRain = () => {
   );
 };
 
+// --- Component: Holographic Data Wall (3x3 Grid) ---
+const DataWall = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+  const textures = useTexture(CONFIG.photos.body);
+  const groupRef = useRef<THREE.Group>(null);
+  const borderGeo = useMemo(() => new THREE.PlaneGeometry(3.2, 3.2), []);
+  const photoGeo = useMemo(() => new THREE.PlaneGeometry(3, 3), []);
+
+  const data = useMemo(() => {
+    return textures.map((_, i) => {
+      const row = Math.floor(i / 3);
+      const col = i % 3;
+      // Grid arrangement: 1-8 followed by top.jpg at the end (index 8)
+      const targetPos = new THREE.Vector3((col - 1) * 3.8, (1 - row) * 3.8 + 5, -18);
+      const chaosPos = new THREE.Vector3((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 60 - 20);
+      const rotationSpeed = { x: (Math.random() - 0.5) * 4, y: (Math.random() - 0.5) * 4 };
+      return { targetPos, chaosPos, currentPos: chaosPos.clone(), rotationSpeed, textureIndex: i };
+    });
+  }, [textures]);
+
+  const [flicker, setFlicker] = useState(1);
+  useFrame((stateObj, delta) => {
+    if (!groupRef.current) return;
+    const isFormed = state === 'FORMED';
+    const time = stateObj.clock.elapsedTime;
+    setFlicker(0.8 + Math.random() * 0.4);
+
+    groupRef.current.children.forEach((child, i) => {
+      const objData = data[i];
+      const target = isFormed ? objData.targetPos : objData.chaosPos;
+
+      const lerpSpeed = isFormed ? 4.0 : 2.5;
+      objData.currentPos.lerp(target, delta * lerpSpeed);
+      child.position.copy(objData.currentPos);
+
+      if (isFormed) {
+        child.rotation.set(Math.sin(time + i) * 0.05, Math.cos(time * 0.8 + i) * 0.05, 0);
+      } else {
+        child.rotation.x += delta * objData.rotationSpeed.x;
+        child.rotation.y += delta * objData.rotationSpeed.y;
+      }
+    });
+  });
+
+  return (
+    <group ref={groupRef}>
+      {data.map((obj, i) => (
+        <group key={i}>
+          {/* Holographic Photo Plane */}
+          <mesh geometry={photoGeo}>
+            <meshStandardMaterial
+              map={textures[obj.textureIndex]}
+              transparent
+              opacity={0.85}
+              emissive={CONFIG.colors.neonCyan}
+              emissiveIntensity={state === 'FORMED' ? 0.3 * flicker : 0}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          {/* Tech Border Frame */}
+          <mesh geometry={borderGeo} position={[0, 0, -0.05]}>
+            <meshStandardMaterial
+              color={i === 8 ? CONFIG.colors.neonPink : CONFIG.colors.neonCyan}
+              wireframe
+              transparent
+              opacity={0.4}
+              emissive={i === 8 ? CONFIG.colors.neonPink : CONFIG.colors.neonCyan}
+              emissiveIntensity={2.0}
+            />
+          </mesh>
+          {state === 'FORMED' && <Sparkles count={5} scale={3} size={2} speed={0.5} color={CONFIG.colors.neonCyan} />}
+        </group>
+      ))}
+    </group>
+  );
+};
+
 // --- Component: Holographic Fireworks ---
 const Firework = ({ position, color }: { position: THREE.Vector3, color: string }) => {
   const count = 150;
@@ -456,6 +532,7 @@ const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORM
           <DataNode state={sceneState} />
           <DigitalRain />
           <FireworksManager state={sceneState} />
+          <DataWall state={sceneState} />
         </Suspense>
         <Sparkles count={800} scale={40} size={4} speed={0.8} opacity={0.5} color={CONFIG.colors.neonCyan} />
       </group>

@@ -2,10 +2,8 @@ import { useState, useMemo, useRef, useEffect, Suspense } from 'react';
 import { Canvas, useFrame, extend } from '@react-three/fiber';
 import {
   OrbitControls,
-  Environment,
   PerspectiveCamera,
   shaderMaterial,
-  Float,
   Stars,
   Sparkles,
   useTexture
@@ -14,81 +12,74 @@ import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import { MathUtils } from 'three';
 import * as random from 'maath/random';
-import { GestureRecognizer, FilesetResolver, DrawingUtils } from "@mediapipe/tasks-vision";
+import { GestureRecognizer, FilesetResolver } from "@mediapipe/tasks-vision";
 
-// --- 动态生成照片列表 (top.jpg + 1.jpg 到 31.jpg) ---
-const TOTAL_NUMBERED_PHOTOS = 31;
-// 修改：将 top.jpg 加入到数组开头
+// --- 动态生成照片列表 (1.jpg 到 8.jpg + top.jpg) ---
+const TOTAL_NUMBERED_PHOTOS = 8;
 const bodyPhotoPaths = [
-  '/photos/top.jpg',
-  ...Array.from({ length: TOTAL_NUMBERED_PHOTOS }, (_, i) => `/photos/${i + 1}.jpg`)
+  ...Array.from({ length: TOTAL_NUMBERED_PHOTOS }, (_, i) => `/photos/${i + 1}.jpg`),
+  '/photos/top.jpg'
 ];
 
-// --- 视觉配置 ---
+// --- Cyberpunk Config ---
 const CONFIG = {
   colors: {
-    emerald: '#004225', // 纯正祖母绿
-    gold: '#FFD700',
-    silver: '#ECEFF1',
-    red: '#D32F2F',
-    green: '#2E7D32',
-    white: '#FFFFFF',   // 纯白色
-    warmLight: '#FFD54F',
-    lights: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'], // 彩灯
-    // 拍立得边框颜色池 (复古柔和色系)
-    borders: ['#FFFAF0', '#F0E68C', '#E6E6FA', '#FFB6C1', '#98FB98', '#87CEFA', '#FFDAB9'],
-    // 圣诞元素颜色
-    giftColors: ['#D32F2F', '#FFD700', '#1976D2', '#2E7D32'],
-    candyColors: ['#FF0000', '#FFFFFF']
+    bg: '#050505',
+    neonCyan: '#00F3FF',
+    neonGreen: '#00FF41',
+    neonPink: '#FF00FF',
+    neonYellow: '#FAFF00',
+    white: '#FFFFFF',
+    glitchColors: ['#00F3FF', '#FF00FF', '#FAFF00', '#00FF41'],
+    dataBorders: ['#050505', '#00F3FF', '#FF00FF', '#FAFF00'],
   },
   counts: {
-    foliage: 15000,
-    ornaments: 300,   // 拍立得照片数量
-    elements: 200,    // 圣诞元素数量
-    lights: 400       // 彩灯数量
+    foliage: 18000,   // Increased for more density
+    ornaments: 300,   // Data Logs
+    elements: 250,    // Data Fragments
+    lights: 400       // Data Nodes
   },
-  tree: { height: 22, radius: 9 }, // 树体尺寸
+  tree: { height: 22, radius: 9 },
   photos: {
-    // top 属性不再需要，因为已经移入 body
     body: bodyPhotoPaths
   }
 };
 
-// --- Shader Material (Foliage) ---
+// --- Shader Material (Data Foliage) ---
 const FoliageMaterial = shaderMaterial(
-  { uTime: 0, uColor: new THREE.Color(CONFIG.colors.emerald), uProgress: 0 },
-  `uniform float uTime; uniform float uProgress; attribute vec3 aTargetPos; attribute float aRandom;
+  { uTime: 0, uColor: new THREE.Color(CONFIG.colors.neonCyan), uProgress: 0, uChaosSpeed: 1.0 },
+  `uniform float uTime; uniform float uProgress; uniform float uChaosSpeed; attribute vec3 aTargetPos; attribute float aRandom;
   varying vec2 vUv; varying float vMix;
   float cubicInOut(float t) { return t < 0.5 ? 4.0 * t * t * t : 0.5 * pow(2.0 * t - 2.0, 3.0) + 1.0; }
   void main() {
     vUv = uv;
-    vec3 noise = vec3(sin(uTime * 1.5 + position.x), cos(uTime + position.y), sin(uTime * 1.5 + position.z)) * 0.15;
+    float timeScale = uProgress < 0.5 ? 3.0 * uChaosSpeed : 1.5;
+    vec3 noise = vec3(sin(uTime * timeScale + position.x), cos(uTime * timeScale + position.y), sin(uTime * timeScale + position.z)) * (uProgress < 0.5 ? 0.8 : 0.15);
     float t = cubicInOut(uProgress);
     vec3 finalPos = mix(position, aTargetPos + noise, t);
     vec4 mvPosition = modelViewMatrix * vec4(finalPos, 1.0);
-    gl_PointSize = (60.0 * (1.0 + aRandom)) / -mvPosition.z;
+    gl_PointSize = (65.0 * (1.0 + aRandom)) / -mvPosition.z;
     gl_Position = projectionMatrix * mvPosition;
     vMix = t;
   }`,
   `uniform vec3 uColor; varying float vMix;
   void main() {
     float r = distance(gl_PointCoord, vec2(0.5)); if (r > 0.5) discard;
-    vec3 finalColor = mix(uColor * 0.3, uColor * 1.2, vMix);
+    vec3 finalColor = mix(vec3(0.0, 1.0, 0.25), uColor, vMix); // Mix with electric green
     gl_FragColor = vec4(finalColor, 1.0);
   }`
 );
 extend({ FoliageMaterial });
 
-// --- Helper: Tree Shape ---
 const getTreePosition = () => {
   const h = CONFIG.tree.height; const rBase = CONFIG.tree.radius;
-  const y = (Math.random() * h) - (h / 2); const normalizedY = (y + (h/2)) / h;
+  const y = (Math.random() * h) - (h / 2); const normalizedY = (y + (h / 2)) / h;
   const currentRadius = rBase * (1 - normalizedY); const theta = Math.random() * Math.PI * 2;
   const r = Math.random() * currentRadius;
   return [r * Math.cos(theta), y, r * Math.sin(theta)];
 };
 
-// --- Component: Foliage ---
+// --- Component: Data Foliage ---
 const Foliage = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const materialRef = useRef<any>(null);
   const { positions, targetPositions, randoms } = useMemo(() => {
@@ -96,9 +87,9 @@ const Foliage = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
     const positions = new Float32Array(count * 3); const targetPositions = new Float32Array(count * 3); const randoms = new Float32Array(count);
     const spherePoints = random.inSphere(new Float32Array(count * 3), { radius: 25 }) as Float32Array;
     for (let i = 0; i < count; i++) {
-      positions[i*3] = spherePoints[i*3]; positions[i*3+1] = spherePoints[i*3+1]; positions[i*3+2] = spherePoints[i*3+2];
+      positions[i * 3] = spherePoints[i * 3]; positions[i * 3 + 1] = spherePoints[i * 3 + 1]; positions[i * 3 + 2] = spherePoints[i * 3 + 2];
       const [tx, ty, tz] = getTreePosition();
-      targetPositions[i*3] = tx; targetPositions[i*3+1] = ty; targetPositions[i*3+2] = tz;
+      targetPositions[i * 3] = tx; targetPositions[i * 3 + 1] = ty; targetPositions[i * 3 + 2] = tz;
       randoms[i] = Math.random();
     }
     return { positions, targetPositions, randoms };
@@ -108,6 +99,7 @@ const Foliage = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
       materialRef.current.uTime = rootState.clock.elapsedTime;
       const targetProgress = state === 'FORMED' ? 1 : 0;
       materialRef.current.uProgress = MathUtils.damp(materialRef.current.uProgress, targetProgress, 1.5, delta);
+      materialRef.current.uChaosSpeed = state === 'CHAOS' ? 2.5 : 1.0;
     }
   });
   return (
@@ -123,8 +115,8 @@ const Foliage = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   );
 };
 
-// --- Component: Photo Ornaments (Double-Sided Polaroid) ---
-const PhotoOrnaments = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+// --- Component: Data Logs (Holographic Photos) ---
+const DataLogs = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const textures = useTexture(CONFIG.photos.body);
   const count = CONFIG.counts.ornaments;
   const groupRef = useRef<THREE.Group>(null);
@@ -134,24 +126,24 @@ const PhotoOrnaments = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
 
   const data = useMemo(() => {
     return new Array(count).fill(0).map((_, i) => {
-      const chaosPos = new THREE.Vector3((Math.random()-0.5)*70, (Math.random()-0.5)*70, (Math.random()-0.5)*70);
+      const chaosPos = new THREE.Vector3((Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70, (Math.random() - 0.5) * 70);
       const h = CONFIG.tree.height; const y = (Math.random() * h) - (h / 2);
       const rBase = CONFIG.tree.radius;
-      const currentRadius = (rBase * (1 - (y + (h/2)) / h)) + 0.5;
+      const currentRadius = (rBase * (1 - (y + (h / 2)) / h)) + 0.5;
       const theta = Math.random() * Math.PI * 2;
       const targetPos = new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
 
       const isBig = Math.random() < 0.2;
       const baseScale = isBig ? 2.2 : 0.8 + Math.random() * 0.6;
       const weight = 0.8 + Math.random() * 1.2;
-      const borderColor = CONFIG.colors.borders[Math.floor(Math.random() * CONFIG.colors.borders.length)];
+      const borderColor = CONFIG.colors.dataBorders[Math.floor(Math.random() * CONFIG.colors.dataBorders.length)];
 
       const rotationSpeed = {
-        x: (Math.random() - 0.5) * 1.0,
-        y: (Math.random() - 0.5) * 1.0,
-        z: (Math.random() - 0.5) * 1.0
+        x: (Math.random() - 0.5) * 2.0,
+        y: (Math.random() - 0.5) * 2.0,
+        z: (Math.random() - 0.5) * 2.0
       };
-      const chaosRotation = new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      const chaosRotation = new THREE.Euler(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
 
       return {
         chaosPos, targetPos, scale: baseScale, weight,
@@ -175,22 +167,17 @@ const PhotoOrnaments = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
       const objData = data[i];
       const target = isFormed ? objData.targetPos : objData.chaosPos;
 
-      objData.currentPos.lerp(target, delta * (isFormed ? 0.8 * objData.weight : 0.5));
+      objData.currentPos.lerp(target, delta * (isFormed ? 0.8 * objData.weight : 1.5)); // Faster Chaos
       group.position.copy(objData.currentPos);
 
       if (isFormed) {
-         const targetLookPos = new THREE.Vector3(group.position.x * 2, group.position.y + 0.5, group.position.z * 2);
-         group.lookAt(targetLookPos);
-
-         const wobbleX = Math.sin(time * objData.wobbleSpeed + objData.wobbleOffset) * 0.05;
-         const wobbleZ = Math.cos(time * objData.wobbleSpeed * 0.8 + objData.wobbleOffset) * 0.05;
-         group.rotation.x += wobbleX;
-         group.rotation.z += wobbleZ;
-
+        const targetLookPos = new THREE.Vector3(group.position.x * 2, group.position.y + 0.5, group.position.z * 2);
+        group.lookAt(targetLookPos);
+        group.rotation.x += Math.sin(time * objData.wobbleSpeed + objData.wobbleOffset) * 0.05;
       } else {
-         group.rotation.x += delta * objData.rotationSpeed.x;
-         group.rotation.y += delta * objData.rotationSpeed.y;
-         group.rotation.z += delta * objData.rotationSpeed.z;
+        group.rotation.x += delta * objData.rotationSpeed.x * 2;
+        group.rotation.y += delta * objData.rotationSpeed.y * 2;
+        group.rotation.z += delta * objData.rotationSpeed.z * 2;
       }
     });
   });
@@ -198,71 +185,49 @@ const PhotoOrnaments = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   return (
     <group ref={groupRef}>
       {data.map((obj, i) => (
-        <group key={i} scale={[obj.scale, obj.scale, obj.scale]} rotation={state === 'CHAOS' ? obj.chaosRotation : [0,0,0]}>
-          {/* 正面 */}
-          <group position={[0, 0, 0.015]}>
-            <mesh geometry={photoGeometry}>
-              <meshStandardMaterial
-                map={textures[obj.textureIndex]}
-                roughness={0.5} metalness={0}
-                emissive={CONFIG.colors.white} emissiveMap={textures[obj.textureIndex]} emissiveIntensity={1.0}
-                side={THREE.FrontSide}
-              />
-            </mesh>
-            <mesh geometry={borderGeometry} position={[0, -0.15, -0.01]}>
-              <meshStandardMaterial color={obj.borderColor} roughness={0.9} metalness={0} side={THREE.FrontSide} />
-            </mesh>
-          </group>
-          {/* 背面 */}
-          <group position={[0, 0, -0.015]} rotation={[0, Math.PI, 0]}>
-            <mesh geometry={photoGeometry}>
-              <meshStandardMaterial
-                map={textures[obj.textureIndex]}
-                roughness={0.5} metalness={0}
-                emissive={CONFIG.colors.white} emissiveMap={textures[obj.textureIndex]} emissiveIntensity={1.0}
-                side={THREE.FrontSide}
-              />
-            </mesh>
-            <mesh geometry={borderGeometry} position={[0, -0.15, -0.01]}>
-              <meshStandardMaterial color={obj.borderColor} roughness={0.9} metalness={0} side={THREE.FrontSide} />
-            </mesh>
-          </group>
+        <group key={i} scale={[obj.scale, obj.scale, obj.scale]} rotation={state === 'CHAOS' ? obj.chaosRotation : [0, 0, 0]}>
+          <mesh geometry={photoGeometry} position={[0, 0, 0.01]}>
+            <meshStandardMaterial
+              map={textures[obj.textureIndex]}
+              emissive={CONFIG.colors.neonCyan} emissiveMap={textures[obj.textureIndex]} emissiveIntensity={0.5}
+              transparent opacity={0.9}
+            />
+          </mesh>
+          <mesh geometry={borderGeometry} position={[0, -0.15, 0]}>
+            <meshStandardMaterial color={obj.borderColor} roughness={0.1} metalness={1.0} wireframe={i % 5 === 0} />
+          </mesh>
         </group>
       ))}
     </group>
   );
 };
 
-// --- Component: Christmas Elements ---
-const ChristmasElements = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+// --- Component: Data Fragments (Tech Shapes) ---
+const DataFragments = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const count = CONFIG.counts.elements;
   const groupRef = useRef<THREE.Group>(null);
 
-  const boxGeometry = useMemo(() => new THREE.BoxGeometry(0.8, 0.8, 0.8), []);
-  const sphereGeometry = useMemo(() => new THREE.SphereGeometry(0.5, 16, 16), []);
-  const caneGeometry = useMemo(() => new THREE.CylinderGeometry(0.15, 0.15, 1.2, 8), []);
+  const icosahedronGeo = useMemo(() => new THREE.IcosahedronGeometry(0.5, 0), []);
+  const octahedronGeo = useMemo(() => new THREE.OctahedronGeometry(0.6, 0), []);
 
   const data = useMemo(() => {
     return new Array(count).fill(0).map(() => {
-      const chaosPos = new THREE.Vector3((Math.random()-0.5)*60, (Math.random()-0.5)*60, (Math.random()-0.5)*60);
+      const chaosPos = new THREE.Vector3((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80);
       const h = CONFIG.tree.height;
       const y = (Math.random() * h) - (h / 2);
       const rBase = CONFIG.tree.radius;
-      const currentRadius = (rBase * (1 - (y + (h/2)) / h)) * 0.95;
+      const currentRadius = (rBase * (1 - (y + (h / 2)) / h)) * 0.95;
       const theta = Math.random() * Math.PI * 2;
-
       const targetPos = new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
 
-      const type = Math.floor(Math.random() * 3);
-      let color; let scale = 1;
-      if (type === 0) { color = CONFIG.colors.giftColors[Math.floor(Math.random() * CONFIG.colors.giftColors.length)]; scale = 0.8 + Math.random() * 0.4; }
-      else if (type === 1) { color = CONFIG.colors.giftColors[Math.floor(Math.random() * CONFIG.colors.giftColors.length)]; scale = 0.6 + Math.random() * 0.4; }
-      else { color = Math.random() > 0.5 ? CONFIG.colors.red : CONFIG.colors.white; scale = 0.7 + Math.random() * 0.3; }
+      const type = Math.random() > 0.5 ? 0 : 1;
+      const color = Math.random() > 0.5 ? CONFIG.colors.neonPink : CONFIG.colors.neonYellow;
+      const scale = 0.5 + Math.random() * 0.7;
+      const rotationSpeed = { x: (Math.random() - 0.5) * 3.0, y: (Math.random() - 0.5) * 3.0, z: (Math.random() - 0.5) * 3.0 };
 
-      const rotationSpeed = { x: (Math.random()-0.5)*2.0, y: (Math.random()-0.5)*2.0, z: (Math.random()-0.5)*2.0 };
-      return { type, chaosPos, targetPos, color, scale, currentPos: chaosPos.clone(), chaosRotation: new THREE.Euler(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI), rotationSpeed };
+      return { type, chaosPos, targetPos, color, scale, currentPos: chaosPos.clone(), rotationSpeed, wireframe: Math.random() > 0.7 };
     });
-  }, [boxGeometry, sphereGeometry, caneGeometry]);
+  }, [count]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -271,115 +236,193 @@ const ChristmasElements = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
       const mesh = child as THREE.Mesh;
       const objData = data[i];
       const target = isFormed ? objData.targetPos : objData.chaosPos;
-      objData.currentPos.lerp(target, delta * 1.5);
+      objData.currentPos.lerp(target, delta * (isFormed ? 1.5 : 2.5));
       mesh.position.copy(objData.currentPos);
-      mesh.rotation.x += delta * objData.rotationSpeed.x; mesh.rotation.y += delta * objData.rotationSpeed.y; mesh.rotation.z += delta * objData.rotationSpeed.z;
+      mesh.rotation.x += delta * objData.rotationSpeed.x;
+      mesh.rotation.y += delta * objData.rotationSpeed.y;
     });
   });
 
   return (
     <group ref={groupRef}>
-      {data.map((obj, i) => {
-        let geometry; if (obj.type === 0) geometry = boxGeometry; else if (obj.type === 1) geometry = sphereGeometry; else geometry = caneGeometry;
-        return ( <mesh key={i} scale={[obj.scale, obj.scale, obj.scale]} geometry={geometry} rotation={obj.chaosRotation}>
-          <meshStandardMaterial color={obj.color} roughness={0.3} metalness={0.4} emissive={obj.color} emissiveIntensity={0.2} />
-        </mesh> )})}
+      {data.map((obj, i) => (
+        <mesh
+          key={i}
+          geometry={obj.type === 0 ? icosahedronGeo : octahedronGeo}
+          scale={[obj.scale, obj.scale, obj.scale]}
+        >
+          <meshStandardMaterial
+            color={obj.color}
+            emissive={obj.color}
+            emissiveIntensity={2}
+            wireframe={obj.wireframe}
+            roughness={0}
+            metalness={1}
+          />
+        </mesh>
+      ))}
     </group>
   );
 };
 
-// --- Component: Fairy Lights ---
-const FairyLights = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
-  const count = CONFIG.counts.lights;
+// --- Component: Main Data Node (Top Element) ---
+const DataNode = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const geometry = useMemo(() => new THREE.SphereGeometry(0.8, 8, 8), []);
-
-  const data = useMemo(() => {
-    return new Array(count).fill(0).map(() => {
-      const chaosPos = new THREE.Vector3((Math.random()-0.5)*60, (Math.random()-0.5)*60, (Math.random()-0.5)*60);
-      const h = CONFIG.tree.height; const y = (Math.random() * h) - (h / 2); const rBase = CONFIG.tree.radius;
-      const currentRadius = (rBase * (1 - (y + (h/2)) / h)) + 0.3; const theta = Math.random() * Math.PI * 2;
-      const targetPos = new THREE.Vector3(currentRadius * Math.cos(theta), y, currentRadius * Math.sin(theta));
-      const color = CONFIG.colors.lights[Math.floor(Math.random() * CONFIG.colors.lights.length)];
-      const speed = 2 + Math.random() * 3;
-      return { chaosPos, targetPos, color, speed, currentPos: chaosPos.clone(), timeOffset: Math.random() * 100 };
-    });
-  }, []);
-
-  useFrame((stateObj, delta) => {
-    if (!groupRef.current) return;
-    const isFormed = state === 'FORMED';
-    const time = stateObj.clock.elapsedTime;
-    groupRef.current.children.forEach((child, i) => {
-      const objData = data[i];
-      const target = isFormed ? objData.targetPos : objData.chaosPos;
-      objData.currentPos.lerp(target, delta * 2.0);
-      const mesh = child as THREE.Mesh;
-      mesh.position.copy(objData.currentPos);
-      const intensity = (Math.sin(time * objData.speed + objData.timeOffset) + 1) / 2;
-      if (mesh.material) { (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = isFormed ? 3 + intensity * 4 : 0; }
-    });
-  });
-
-  return (
-    <group ref={groupRef}>
-      {data.map((obj, i) => ( <mesh key={i} scale={[0.15, 0.15, 0.15]} geometry={geometry}>
-          <meshStandardMaterial color={obj.color} emissive={obj.color} emissiveIntensity={0} toneMapped={false} />
-        </mesh> ))}
-    </group>
-  );
-};
-
-// --- Component: Top Star (No Photo, Pure Gold 3D Star) ---
-const TopStar = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
-  const groupRef = useRef<THREE.Group>(null);
-
-  const starShape = useMemo(() => {
-    const shape = new THREE.Shape();
-    const outerRadius = 1.3; const innerRadius = 0.7; const points = 5;
-    for (let i = 0; i < points * 2; i++) {
-      const radius = i % 2 === 0 ? outerRadius : innerRadius;
-      const angle = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
-      i === 0 ? shape.moveTo(radius*Math.cos(angle), radius*Math.sin(angle)) : shape.lineTo(radius*Math.cos(angle), radius*Math.sin(angle));
-    }
-    shape.closePath();
-    return shape;
-  }, []);
-
-  const starGeometry = useMemo(() => {
-    return new THREE.ExtrudeGeometry(starShape, {
-      depth: 0.4, // 增加一点厚度
-      bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 3,
-    });
-  }, [starShape]);
-
-  // 纯金材质
-  const goldMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    color: CONFIG.colors.gold,
-    emissive: CONFIG.colors.gold,
-    emissiveIntensity: 1.5, // 适中亮度，既发光又有质感
-    roughness: 0.1,
-    metalness: 1.0,
+  const geo = useMemo(() => new THREE.OctahedronGeometry(1.5, 0), []);
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({
+    color: CONFIG.colors.neonCyan,
+    emissive: CONFIG.colors.neonCyan,
+    emissiveIntensity: 5.0,
+    wireframe: true
   }), []);
 
-  useFrame((_, delta) => {
+  useFrame((stateObj, delta) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.5;
-      const targetScale = state === 'FORMED' ? 1 : 0;
-      groupRef.current.scale.lerp(new THREE.Vector3(targetScale, targetScale, targetScale), delta * 3);
+      groupRef.current.rotation.y += delta * 2;
+      groupRef.current.rotation.z += delta * 1;
+      const scale = (state === 'FORMED' ? 1 : 0) * (1 + Math.sin(stateObj.clock.elapsedTime * 5) * 0.2);
+      groupRef.current.scale.lerp(new THREE.Vector3(scale, scale, scale), delta * 3);
     }
   });
 
   return (
-    <group ref={groupRef} position={[0, CONFIG.tree.height / 2 + 1.8, 0]}>
-      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.2}>
-        <mesh geometry={starGeometry} material={goldMaterial} />
-      </Float>
+    <group ref={groupRef} position={[0, CONFIG.tree.height / 2 + 2, 0]}>
+      <mesh geometry={geo} material={mat} />
+      <mesh geometry={geo} scale={[0.5, 0.5, 0.5]}>
+        <meshStandardMaterial color={CONFIG.colors.neonPink} emissive={CONFIG.colors.neonPink} emissiveIntensity={10} />
+      </mesh>
     </group>
   );
 };
 
-// --- Main Scene Experience ---
+// --- Component: Digital Rain (Falling Bits) ---
+const DigitalRain = () => {
+  const count = 500;
+  const positions = useMemo(() => {
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      arr[i * 3] = (Math.random() - 0.5) * 60;
+      arr[i * 3 + 1] = Math.random() * 60;
+      arr[i * 3 + 2] = (Math.random() - 0.5) * 60;
+    }
+    return arr;
+  }, []);
+
+  const meshRef = useRef<THREE.Points>(null);
+  useFrame((_, delta) => {
+    if (meshRef.current) {
+      const pos = meshRef.current.geometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < count; i++) {
+        pos[i * 3 + 1] -= delta * 15;
+        if (pos[i * 3 + 1] < -30) pos[i * 3 + 1] = 30;
+      }
+      meshRef.current.geometry.attributes.position.needsUpdate = true;
+    }
+  });
+
+  return (
+    <points ref={meshRef}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+      </bufferGeometry>
+      <pointsMaterial size={0.3} color={CONFIG.colors.neonGreen} transparent opacity={0.4} />
+    </points>
+  );
+};
+
+// --- Component: Holographic Fireworks ---
+const Firework = ({ position, color }: { position: THREE.Vector3, color: string }) => {
+  const count = 150;
+  const particles = useMemo(() => {
+    const arr = new Float32Array(count * 3);
+    const vels = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      const speed = 0.5 + Math.random() * 2;
+      vels[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
+      vels[i * 3 + 1] = Math.sin(phi) * Math.sin(theta) * speed;
+      vels[i * 3 + 2] = Math.cos(phi) * speed;
+    }
+    return { pos: arr, vel: vels };
+  }, []);
+
+  const meshRef = useRef<THREE.Points>(null);
+  const [life, setLife] = useState(1.0);
+
+  useFrame((_, delta) => {
+    if (meshRef.current && life > 0) {
+      const p = meshRef.current.geometry.attributes.position.array as Float32Array;
+      for (let i = 0; i < count; i++) {
+        p[i * 3] += particles.vel[i * 3] * delta * 5;
+        p[i * 3 + 1] += particles.vel[i * 3 + 1] * delta * 5;
+        p[i * 3 + 2] += particles.vel[i * 3 + 2] * delta * 5;
+      }
+      meshRef.current.geometry.attributes.position.needsUpdate = true;
+      setLife(l => l - delta * 0.8);
+    }
+  });
+
+  if (life <= 0) return null;
+
+  return (
+    <points ref={meshRef} position={position}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[particles.pos, 3]} />
+      </bufferGeometry>
+      <pointsMaterial size={0.4} color={color} transparent opacity={life} blending={THREE.AdditiveBlending} />
+    </points>
+  );
+};
+
+const FireworksManager = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+  const [fireworks, setFireworks] = useState<{ id: number, pos: THREE.Vector3, color: string }[]>([]);
+  const idRef = useRef(0);
+
+  useEffect(() => {
+    if (state === 'FORMED') {
+      const interval = setInterval(() => {
+        const pos = new THREE.Vector3((Math.random() - 0.5) * 40, 5 + Math.random() * 15, (Math.random() - 0.5) * 40);
+        const color = CONFIG.colors.glitchColors[Math.floor(Math.random() * CONFIG.colors.glitchColors.length)];
+        setFireworks(prev => [...prev.slice(-10), { id: idRef.current++, pos, color }]);
+      }, 800);
+      return () => clearInterval(interval);
+    }
+  }, [state]);
+
+  return (
+    <>
+      {fireworks.map(f => <Firework key={f.id} position={f.pos} color={f.color} />)}
+    </>
+  );
+};
+
+// --- Component: Glitchy 2026 Title ---
+const GlitchTitle = ({ state }: { state: 'CHAOS' | 'FORMED' }) => {
+  const [glitch, setGlitch] = useState(false);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setGlitch(true);
+      setTimeout(() => setGlitch(false), 100);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (state !== 'FORMED') return null;
+
+  return (
+    <div style={{
+      position: 'absolute', top: '20%', left: '50%', transform: 'translateX(-50%)',
+      fontSize: '120px', fontWeight: 'bold', color: CONFIG.colors.neonCyan,
+      fontFamily: 'Courier New, monospace', pointerEvents: 'none', zIndex: 5,
+      opacity: 0.1, letterSpacing: '20px', textShadow: glitch ? `5px 0 ${CONFIG.colors.neonPink}, -5px 0 ${CONFIG.colors.neonGreen}` : 'none'
+    }}>
+      2026
+    </div>
+  );
+};
+
+// --- Scene Setup ---
 const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORMED', rotationSpeed: number }) => {
   const controlsRef = useRef<any>(null);
   useFrame(() => {
@@ -392,48 +435,51 @@ const Experience = ({ sceneState, rotationSpeed }: { sceneState: 'CHAOS' | 'FORM
   return (
     <>
       <PerspectiveCamera makeDefault position={[0, 8, 60]} fov={45} />
-      <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={30} maxDistance={120} autoRotate={rotationSpeed === 0 && sceneState === 'FORMED'} autoRotateSpeed={0.3} maxPolarAngle={Math.PI / 1.7} />
+      <OrbitControls ref={controlsRef} enablePan={false} enableZoom={true} minDistance={20} maxDistance={100} autoRotate={sceneState === 'FORMED'} autoRotateSpeed={0.5} />
 
-      <color attach="background" args={['#000300']} />
-      <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-      <Environment preset="night" background={false} />
+      <color attach="background" args={[CONFIG.colors.bg]} />
+      <Stars radius={100} depth={50} count={7000} factor={4} saturation={1} fade speed={2} />
 
-      <ambientLight intensity={0.4} color="#003311" />
-      <pointLight position={[30, 30, 30]} intensity={100} color={CONFIG.colors.warmLight} />
-      <pointLight position={[-30, 10, -30]} intensity={50} color={CONFIG.colors.gold} />
-      <pointLight position={[0, -20, 10]} intensity={30} color="#ffffff" />
+      {/* Replaced external Environment with robust local lighting */}
+      <ambientLight intensity={0.5} />
+      <pointLight position={[20, 30, 20]} intensity={100} color={CONFIG.colors.neonCyan} />
+      <pointLight position={[-20, 10, -20]} intensity={80} color={CONFIG.colors.neonPink} />
+      <pointLight position={[0, -10, 30]} intensity={50} color={CONFIG.colors.neonYellow} />
+      <directionalLight position={[0, 5, 5]} intensity={0.5} />
 
       <group position={[0, -6, 0]}>
         <Foliage state={sceneState} />
         <Suspense fallback={null}>
-           <PhotoOrnaments state={sceneState} />
-           <ChristmasElements state={sceneState} />
-           <FairyLights state={sceneState} />
-           <TopStar state={sceneState} />
+          <DataLogs state={sceneState} />
+          <DataFragments state={sceneState} />
+          <DataNode state={sceneState} />
+          <DigitalRain />
+          <FireworksManager state={sceneState} />
         </Suspense>
-        <Sparkles count={600} scale={50} size={8} speed={0.4} opacity={0.4} color={CONFIG.colors.silver} />
+        <Sparkles count={800} scale={40} size={4} speed={0.8} opacity={0.5} color={CONFIG.colors.neonCyan} />
       </group>
 
       <EffectComposer>
-        <Bloom luminanceThreshold={0.8} luminanceSmoothing={0.1} intensity={1.5} radius={0.5} mipmapBlur />
-        <Vignette eskil={false} offset={0.1} darkness={1.2} />
+        <Bloom luminanceThreshold={0.2} luminanceSmoothing={0.9} intensity={2.0} radius={0.4} />
+        <Vignette eskil={false} offset={0.1} darkness={1.5} />
       </EffectComposer>
     </>
   );
 };
 
 // --- Gesture Controller ---
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
+const GestureController = ({ onGesture, onMove, onStatus }: any) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let gestureRecognizer: GestureRecognizer;
     let requestRef: number;
+    let stream: MediaStream | null = null;
+    let isActive = true;
 
     const setup = async () => {
-      onStatus("DOWNLOADING AI...");
+      onStatus("INITIALIZING CORE...");
       try {
         const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
         gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
@@ -444,110 +490,159 @@ const GestureController = ({ onGesture, onMove, onStatus, debugMode }: any) => {
           runningMode: "VIDEO",
           numHands: 1
         });
-        onStatus("REQUESTING CAMERA...");
+
+        if (!isActive) return;
+
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          if (videoRef.current) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          if (videoRef.current && isActive) {
             videoRef.current.srcObject = stream;
-            videoRef.current.play();
-            onStatus("AI READY: SHOW HAND");
+            // Handle play() promise to avoid AbortError
+            videoRef.current.play().catch(() => {
+              /* Ignore interruption errors */
+            });
+            onStatus("SYSTEM READY_");
             predictWebcam();
           }
-        } else {
-            onStatus("ERROR: CAMERA PERMISSION DENIED");
         }
       } catch (err: any) {
-        onStatus(`ERROR: ${err.message || 'MODEL FAILED'}`);
+        if (isActive) onStatus("AI_LINK_OFFLINE");
       }
     };
 
     const predictWebcam = () => {
-      if (gestureRecognizer && videoRef.current && canvasRef.current) {
+      if (gestureRecognizer && videoRef.current && canvasRef.current && isActive) {
         if (videoRef.current.videoWidth > 0) {
-            const results = gestureRecognizer.recognizeForVideo(videoRef.current, Date.now());
-            const ctx = canvasRef.current.getContext("2d");
-            if (ctx && debugMode) {
-                ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                canvasRef.current.width = videoRef.current.videoWidth; canvasRef.current.height = videoRef.current.videoHeight;
-                if (results.landmarks) for (const landmarks of results.landmarks) {
-                        const drawingUtils = new DrawingUtils(ctx);
-                        drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: "#FFD700", lineWidth: 2 });
-                        drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 1 });
-                }
-            } else if (ctx && !debugMode) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-
-            if (results.gestures.length > 0) {
-              const name = results.gestures[0][0].categoryName; const score = results.gestures[0][0].score;
-              if (score > 0.4) {
-                 if (name === "Open_Palm") onGesture("CHAOS"); if (name === "Closed_Fist") onGesture("FORMED");
-                 if (debugMode) onStatus(`DETECTED: ${name}`);
-              }
-              if (results.landmarks.length > 0) {
-                const speed = (0.5 - results.landmarks[0][0].x) * 0.15;
-                onMove(Math.abs(speed) > 0.01 ? speed : 0);
-              }
-            } else { onMove(0); if (debugMode) onStatus("AI READY: NO HAND"); }
+          const results = gestureRecognizer.recognizeForVideo(videoRef.current, Date.now());
+          if (results.gestures.length > 0) {
+            const name = results.gestures[0][0].categoryName; const score = results.gestures[0][0].score;
+            if (score > 0.4) {
+              if (name === "Open_Palm") onGesture("CHAOS"); if (name === "Closed_Fist") onGesture("FORMED");
+            }
+            if (results.landmarks.length > 0) {
+              const speed = (0.5 - results.landmarks[0][0].x) * 0.2;
+              onMove(Math.abs(speed) > 0.01 ? speed : 0);
+            }
+          } else { onMove(0); }
         }
         requestRef = requestAnimationFrame(predictWebcam);
       }
     };
     setup();
-    return () => cancelAnimationFrame(requestRef);
-  }, [onGesture, onMove, onStatus, debugMode]);
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(requestRef);
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [onGesture, onMove, onStatus]);
 
   return (
     <>
-      <video ref={videoRef} style={{ opacity: debugMode ? 0.6 : 0, position: 'fixed', top: 0, right: 0, width: debugMode ? '320px' : '1px', zIndex: debugMode ? 100 : -1, pointerEvents: 'none', transform: 'scaleX(-1)' }} playsInline muted autoPlay />
-      <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, right: 0, width: debugMode ? '320px' : '1px', height: debugMode ? 'auto' : '1px', zIndex: debugMode ? 101 : -1, pointerEvents: 'none', transform: 'scaleX(-1)' }} />
+      <video ref={videoRef} style={{ opacity: 0, position: 'fixed', top: 0, right: 0, width: '1px' }} playsInline muted autoPlay />
+      <canvas ref={canvasRef} style={{ opacity: 0, position: 'fixed', top: 0, right: 0, width: '1px' }} />
     </>
   );
 };
 
 // --- App Entry ---
-export default function GrandTreeApp() {
+export default function CyberDataTreeApp() {
   const [sceneState, setSceneState] = useState<'CHAOS' | 'FORMED'>('CHAOS');
   const [rotationSpeed, setRotationSpeed] = useState(0);
-  const [aiStatus, setAiStatus] = useState("INITIALIZING...");
-  const [debugMode, setDebugMode] = useState(false);
+  const [aiStatus, setAiStatus] = useState("BOOTING...");
+
+  // New Year Countdown Logic
+  const [timeLeft, setTimeLeft] = useState("");
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date().getTime();
+      const target = new Date("Jan 1, 2026 00:00:00").getTime();
+      const diff = target - now;
+      if (diff < 0) {
+        setTimeLeft("WELCOME TO 2026");
+      } else {
+        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const s = Math.floor((diff % (1000 * 60)) / 1000);
+        setTimeLeft(`${d}D ${h}H ${m}M ${s}S`);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', backgroundColor: '#000', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100vh', backgroundColor: CONFIG.colors.bg, position: 'relative', overflow: 'hidden', textShadow: '0 0 10px rgba(0,243,255,0.5)' }}>
+      {/* HUD - Top Center Countdown */}
+      <div style={{
+        position: 'absolute', top: '40px', left: '50%', transform: 'translateX(-50%)',
+        zIndex: 10, textAlign: 'center', pointerEvents: 'none'
+      }}>
+        <div style={{
+          background: 'rgba(0,0,0,0.8)', padding: '10px 20px', border: '1px solid #00F3FF',
+          color: '#00F3FF', fontFamily: 'Courier New, monospace', fontSize: '14px', letterSpacing: '4px',
+          overflow: 'hidden', position: 'relative'
+        }}>
+          <div style={{ position: 'absolute', top: 0, left: '-100%', width: '100%', height: '100%', background: 'linear-gradient(90deg, transparent, rgba(0,243,255,0.2), transparent)', animation: 'scan 2s linear infinite' }} />
+          SYSTEM BOOT: 2026 // [ {timeLeft} ]
+        </div>
+        <div style={{ color: '#00FF41', fontSize: '10px', marginTop: '5px', fontFamily: 'monospace' }}>
+          LOADING NEURAL_STRUCTURE... {sceneState === 'FORMED' ? 'STABLE' : 'BREACH_DETECTED'}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes scan {
+          0% { left: -100%; }
+          100% { left: 100%; }
+        }
+      `}</style>
+
+      <GlitchTitle state={sceneState} />
+
       <div style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
         <Canvas dpr={[1, 2]} gl={{ toneMapping: THREE.ReinhardToneMapping }} shadows>
-            <Experience sceneState={sceneState} rotationSpeed={rotationSpeed} />
+          <Experience sceneState={sceneState} rotationSpeed={rotationSpeed} />
         </Canvas>
       </div>
-      <GestureController onGesture={setSceneState} onMove={setRotationSpeed} onStatus={setAiStatus} debugMode={debugMode} />
+      <GestureController onGesture={setSceneState} onMove={setRotationSpeed} onStatus={setAiStatus} />
 
-      {/* UI - Stats */}
-      <div style={{ position: 'absolute', bottom: '30px', left: '40px', color: '#888', zIndex: 10, fontFamily: 'sans-serif', userSelect: 'none' }}>
-        <div style={{ marginBottom: '15px' }}>
-          <p style={{ fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Memories</p>
-          <p style={{ fontSize: '24px', color: '#FFD700', fontWeight: 'bold', margin: 0 }}>
-            {CONFIG.counts.ornaments.toLocaleString()} <span style={{ fontSize: '10px', color: '#555', fontWeight: 'normal' }}>POLAROIDS</span>
+      {/* HUD - Stats */}
+      <div style={{ position: 'absolute', bottom: '40px', left: '40px', color: '#888', zIndex: 10, fontFamily: 'monospace', userSelect: 'none' }}>
+        <div style={{ marginBottom: '20px' }}>
+          <p style={{ fontSize: '10px', color: '#00F3FF', marginBottom: '5px' }}>&gt; DATA LOGS</p>
+          <p style={{ fontSize: '32px', color: '#FF00FF', fontWeight: 'bold', margin: 0, textShadow: '0 0 10px #FF00FF' }}>
+            {CONFIG.counts.ornaments.toLocaleString()} <span style={{ fontSize: '12px', color: '#555' }}>SHARDS</span>
           </p>
         </div>
         <div>
-          <p style={{ fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '4px' }}>Foliage</p>
-          <p style={{ fontSize: '24px', color: '#004225', fontWeight: 'bold', margin: 0 }}>
-            {(CONFIG.counts.foliage / 1000).toFixed(0)}K <span style={{ fontSize: '10px', color: '#555', fontWeight: 'normal' }}>EMERALD NEEDLES</span>
+          <p style={{ fontSize: '10px', color: '#00F3FF', marginBottom: '5px' }}>&gt; NEURAL_NODES</p>
+          <p style={{ fontSize: '32px', color: '#00FF41', fontWeight: 'bold', margin: 0, textShadow: '0 0 10px #00FF41' }}>
+            {(CONFIG.counts.foliage / 1000).toFixed(1)}K <span style={{ fontSize: '12px', color: '#555' }}>VECTS</span>
           </p>
         </div>
       </div>
 
-      {/* UI - Buttons */}
-      <div style={{ position: 'absolute', bottom: '30px', right: '40px', zIndex: 10, display: 'flex', gap: '10px' }}>
-        <button onClick={() => setDebugMode(!debugMode)} style={{ padding: '12px 15px', backgroundColor: debugMode ? '#FFD700' : 'rgba(0,0,0,0.5)', border: '1px solid #FFD700', color: debugMode ? '#000' : '#FFD700', fontFamily: 'sans-serif', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', backdropFilter: 'blur(4px)' }}>
-           {debugMode ? 'HIDE DEBUG' : '🛠 DEBUG'}
-        </button>
-        <button onClick={() => setSceneState(s => s === 'CHAOS' ? 'FORMED' : 'CHAOS')} style={{ padding: '12px 30px', backgroundColor: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255, 215, 0, 0.5)', color: '#FFD700', fontFamily: 'serif', fontSize: '14px', fontWeight: 'bold', letterSpacing: '3px', textTransform: 'uppercase', cursor: 'pointer', backdropFilter: 'blur(4px)' }}>
-           {sceneState === 'CHAOS' ? 'Assemble Tree' : 'Disperse'}
-        </button>
+      {/* HUD - AI Status */}
+      <div style={{ position: 'absolute', bottom: '40px', left: '50%', transform: 'translateX(-50%)', color: '#00FF41', fontSize: '12px', letterSpacing: '2px', zIndex: 10, fontFamily: 'monospace' }}>
+        {aiStatus}
       </div>
 
-      {/* UI - AI Status */}
-      <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', color: aiStatus.includes('ERROR') ? '#FF0000' : 'rgba(255, 215, 0, 0.4)', fontSize: '10px', letterSpacing: '2px', zIndex: 10, background: 'rgba(0,0,0,0.5)', padding: '4px 8px', borderRadius: '4px' }}>
-        {aiStatus}
+      {/* HUD - Interaction */}
+      <div style={{ position: 'absolute', bottom: '40px', right: '40px', zIndex: 10, display: 'flex', gap: '15px' }}>
+        <button
+          onClick={() => setSceneState(s => s === 'CHAOS' ? 'FORMED' : 'CHAOS')}
+          style={{
+            padding: '15px 30px', background: 'transparent', border: '1px solid #00F3FF',
+            color: '#00F3FF', fontFamily: 'monospace', cursor: 'pointer', transition: 'all 0.3s',
+            backdropFilter: 'blur(10px)', boxShadow: '0 0 15px rgba(0,243,255,0.2)'
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = '#00F3FF'; e.currentTarget.style.color = '#000'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#00F3FF'; }}
+        >
+          {sceneState === 'CHAOS' ? 'CONSTRUCT_TREE' : 'INIT_BREACH'}
+        </button>
       </div>
     </div>
   );
